@@ -97,10 +97,10 @@ echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
-scp ${LIBS}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
-scp ${LIBS}/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64
-scp ${LIBS}/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64
-scp ${LIBS}/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64
+sudo cp ${LIBS}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
+sudo cp ${LIBS}/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64
+sudo cp ${LIBS}/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64
+sudo cp ${LIBS}/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64
 
 cd ${OUTDIR}/rootfs
 # TODO: Make device nodes
@@ -114,11 +114,11 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-scp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
-scp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
-scp -r ${FINDER_APP_DIR}/conf/ ${OUTDIR}/rootfs/home
-scp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
-scp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
+sudo cp -r ${FINDER_APP_DIR}/conf/ ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
 cd ${OUTDIR}/rootfs
