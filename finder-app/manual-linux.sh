@@ -138,7 +138,7 @@ fi
 
 echo "Adding the Image in outdir"
 
-scp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
+scp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}/
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -172,15 +172,17 @@ fi
 
 
 # TODO: Make and install busybox
-make defconfig
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
-make CONFIG_PREFIX=${OUTDIR}/busybox ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
+make CONFIG_PREFIX="${OUTDIR}/rootfs" ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
+
+
+cd ../rootfs
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
-cd ../rootfs
+
 
 # TODO: Add library dependencies to rootfs
 library_path=$(sudo find / -name ld-linux-aarch64.so.1 2>/dev/null || true)
