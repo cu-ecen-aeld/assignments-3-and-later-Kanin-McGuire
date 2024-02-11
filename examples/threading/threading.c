@@ -10,6 +10,31 @@
 
 void* threadfunc(void* thread_param)
 {
+    struct thread_data* thread_func_args = ( struct thread_data* ) thread_param;
+
+    // Sleep for wait_to_obtain_ms milliseconds
+    usleep( thread_func_args->wait_to_obtain_ms * 1000 );
+
+    // Obtain the mutex
+    int ret = pthread_mutex_lock( thread_func_args->mutex );
+    if ( ret )
+    {
+        ERROR_LOG( "%s-%u Error Code: %d\n",__func__,__LINE__, ret );
+        return thread_param;
+    }
+    // Sleep for wait_to_release_ms milliseconds
+    usleep( thread_func_args->wait_to_release_ms * 1000 );
+
+    // Release the mutex
+    ret = pthread_mutex_unlock( thread_func_args->mutex );
+    if ( ret )
+    {
+        ERROR_LOG( "%s-%u Error Code: %d\n",__func__,__LINE__, ret );
+        return thread_param;
+    }
+
+    // Set thread completion status to true
+    thread_func_args->thread_complete_success = true;
 
     // TODO: wait, obtain mutex, wait, release mutex as described by thread_data structure
     // hint: use a cast like the one below to obtain thread arguments from your parameter
@@ -28,6 +53,27 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
      *
      * See implementation details in threading.h file comment block
      */
-    return false;
+
+    struct thread_data* thread_args = ( struct thread_data* ) malloc( sizeof( struct thread_data ) );
+    if ( thread_args == NULL ) 
+    {
+        return false; // Memory allocation failure
+    }
+
+    thread_args->mutex = mutex;
+    thread_args->wait_to_obtain_ms = wait_to_obtain_ms;
+    thread_args->wait_to_release_ms = wait_to_release_ms;
+    thread_args->thread_complete_success = false;
+
+    // Taken and adapted from Book: Linux System Programming, ISBN: 978-1-449-33953-1, Page 229
+    int ret;
+    ret = pthread_create ( thread, NULL, threadfunc, thread_args );
+    if ( ret ) 
+    { // This line in book is wrong
+        ERROR_LOG( "%s-%u Error Code: %d\n",__func__,__LINE__, ret );
+        free( thread_args );
+        return false;
+    }
+    return true;
 }
 
