@@ -73,6 +73,7 @@ bool do_exec(int count, ...)
     // Check if fork was successful
     if (pid == -1)
     {
+        va_end(args);
         // Handle fork error
         perror("fork");
         exit(-1);
@@ -81,6 +82,7 @@ bool do_exec(int count, ...)
     {
         // Execute the specified command
         execv(command[0], command);
+        va_end(args);
         // Handle execv error
         perror("execv");
         exit(-1);
@@ -96,10 +98,6 @@ bool do_exec(int count, ...)
         // Return true if the child process exited normally with status 0, otherwise false
         return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? true : false;
     }
-
-    va_end(args);
-
-    return true;
 }
 
 /**
