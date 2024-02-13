@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Check if both parameters are specified
 if [ "$#" != 2 ]; then
