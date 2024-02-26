@@ -1,3 +1,12 @@
+/*
+ * File: aesdsocket.c
+ * Author: Kanin McGuire
+ * Date: 2/25/2024
+ * Description: C application for creating a socket-based server to receive and send data,
+ *              with sys/log logging.
+ */
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
