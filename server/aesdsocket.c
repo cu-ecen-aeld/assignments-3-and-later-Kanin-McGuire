@@ -19,6 +19,9 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdbool.h>
+#include <pthread.h>
+#include <time.h>
+#include "queue.h"
 
 // Define the path to the data file
 #define DATA_FILE "/var/tmp/aesdsocketdata"
@@ -26,6 +29,20 @@
 // Declare global variables for the socket file descriptor and file pointer
 int serverSocket;
 FILE *filePointer;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_t timestampThread;
+
+// Structure to hold thread information
+struct ThreadInfo
+{
+    pthread_t threadId;
+    int clientSocket;
+    bool threadComplete;
+    SLIST_ENTRY( ThreadInfo ) entries;
+};
+
+// Declare the head of the singly linked list
+SLIST_HEAD( ThreadHead, ThreadInfo ) threadHead;
 
 // Signal handler function to catch SIGINT and SIGTERM signals
 void signalHandler ( int sig )
@@ -39,20 +56,44 @@ void signalHandler ( int sig )
         // Attempt to close the socket file descriptor
         if ( serverSocket != -1 )
         {
-            close( serverSocket );
+            shutdown( serverSocket, SHUT_RDWR );
         }
 
         // Close the syslog connection
         closelog();
+        pthread_cancel( timestampThread );
 
-        // Exit the program
+        // Iterate over the thread list and join each thread
+        struct ThreadInfo *currentThread, *nextThread;
+        SLIST_FOREACH_SAFE( currentThread, &threadHead, entries, nextThread )
+        {
+            pthread_join( currentThread->threadId, NULL );
+            SLIST_REMOVE( &threadHead, currentThread, ThreadInfo, entries );
+            free( currentThread );
+        }
+        // Exit
         exit( 0 );
     }
 }
 
 // Function to handle client connections
-void handleClient ( int clientSocket, struct sockaddr_in clientAddr )
+void *handleClient ( void *arg )
 {
+    // Get thread information from the argument
+    struct ThreadInfo *threadInfo = ( struct ThreadInfo * ) arg;
+    int clientSocket = threadInfo->clientSocket;
+    struct sockaddr_in clientAddr;
+    socklen_t addrSize = sizeof( clientAddr );
+    // Get client address information
+    if ( getpeername( clientSocket, ( struct sockaddr * )&clientAddr, &addrSize ) == -1 )
+    {
+        // Log an error if getting client address fails
+        syslog( LOG_ERR, "Failed to get client address: %s", strerror( errno ) );
+        close( clientSocket );
+        threadInfo->threadComplete = true;
+        pthread_exit( NULL );
+    }
+
     // Declare variables to store client IP address
     char ipAddress[INET_ADDRSTRLEN];
 
@@ -62,16 +103,6 @@ void handleClient ( int clientSocket, struct sockaddr_in clientAddr )
     // Log a message indicating the accepted connection
     syslog( LOG_INFO, "Accepted connection from %s", ipAddress );
 
-    // Open the data file in append mode
-    filePointer = fopen( DATA_FILE, "a" );
-    if ( filePointer == NULL )
-    {
-        // Log an error message if the file cannot be opened
-        syslog( LOG_ERR, "Failed to open file %s: %s", DATA_FILE, strerror( errno ) );
-        closelog();
-        exit( -1 );
-    }
-
     // Declare buffer and variables for receiving data from the client
     char buffer[1024];
     ssize_t bytesReceived;
@@ -79,26 +110,43 @@ void handleClient ( int clientSocket, struct sockaddr_in clientAddr )
     // Receive data from the client
     while ( ( bytesReceived = recv( clientSocket, buffer, sizeof( buffer ), 0 ) ) > 0 )
     {
+        pthread_mutex_lock( &mutex );
+
+        // Open the data file in append mode
+        filePointer = fopen( DATA_FILE, "a" );
+        if ( filePointer == NULL )
+        {
+            // Log an error message if the file cannot be opened
+            syslog( LOG_ERR, "Failed to open file %s: %s", DATA_FILE, strerror( errno ) );
+            pthread_mutex_unlock( &mutex );
+            close( clientSocket );
+            threadInfo->threadComplete = true;
+            pthread_exit( NULL );
+        }
         // Write the received data to the file
         fwrite( buffer, 1, bytesReceived, filePointer );
+        fclose( filePointer );
+
+        pthread_mutex_unlock( &mutex );
 
         // Check for newline character to indicate end of packet
-        if ( buffer[bytesReceived - 1] == '\n' ) {
+        if ( memchr( buffer, '\n', bytesReceived ) != NULL )
+        {
             break;
         }
     }
 
-    // Close the file after writing
-    fclose( filePointer );
-
+    pthread_mutex_lock( &mutex );
     // Open the file in read mode to send the content back to the client
     filePointer = fopen( DATA_FILE, "r" );
     if ( filePointer == NULL )
     {
         // Log an error message if the file cannot be opened
         syslog( LOG_ERR, "Failed to open file %s: %s", DATA_FILE, strerror( errno ) );
-        closelog();
-        exit( -1 );
+        pthread_mutex_unlock( &mutex );
+        close( clientSocket );
+        threadInfo->threadComplete = true;
+        pthread_exit( NULL );
     }
 
     // Sending the full content of the file to the client
@@ -109,12 +157,83 @@ void handleClient ( int clientSocket, struct sockaddr_in clientAddr )
 
     // Close the file
     fclose( filePointer );
+    pthread_mutex_unlock( &mutex );
 
     // Close the client socket
     close( clientSocket );
 
     // Log a message indicating the closed connection
     syslog( LOG_INFO, "Closed connection from %s", ipAddress );
+    threadInfo->threadComplete = true;
+    pthread_exit( NULL );
+}
+
+void *appendTimestamp ( void *arg )
+{
+    struct timespec currentTime;
+    struct tm timeInfo;
+    char timestamp[128];
+
+    while ( 1 )
+    {
+        // Get current time with nanosecond precision
+        if ( clock_gettime( CLOCK_REALTIME, &currentTime ) == -1 )
+        {
+            // Log an error if getting current time fails
+            syslog( LOG_ERR, "Failed to get current time: %s", strerror( errno ) );
+            pthread_exit( NULL );
+        }
+
+        // Convert the timespec to tm structure
+        if ( localtime_r( &currentTime.tv_sec, &timeInfo ) == NULL )
+        {
+            // Log an error if converting time fails
+            syslog( LOG_ERR, "Failed to convert time: %s", strerror( errno ) );
+            pthread_exit( NULL );
+        }
+
+        // Format the timestamp string
+        strftime( timestamp, sizeof( timestamp ), "timestamp:%a, %d %b %Y %T %z", &timeInfo );
+
+        pthread_mutex_lock( &mutex );
+        // Open the file in append mode
+        filePointer = fopen( DATA_FILE, "a" );
+        if ( filePointer == NULL )
+        {
+            // Log an error if opening file fails
+            syslog( LOG_ERR, "Failed to open file %s: %s", DATA_FILE, strerror( errno ) );
+            pthread_mutex_unlock( &mutex );
+            pthread_exit( NULL );
+        }
+
+        // Write the timestamp to the file
+        size_t len = strlen( timestamp );
+        if ( fwrite( timestamp, 1, len, filePointer ) != len )
+        {
+            // Log an error if writing timestamp fails
+            syslog( LOG_ERR, "Failed to write timestamp to file" );
+            fclose( filePointer );
+            pthread_mutex_unlock( &mutex );
+            pthread_exit( NULL );
+        }
+
+        // Write newline character
+        if ( fwrite( "\n", 1, 1, filePointer ) != 1 )
+        {
+            // Log an error if writing newline character fails
+            syslog( LOG_ERR, "Failed to write newline character to file" );
+            fclose( filePointer );
+            pthread_mutex_unlock( &mutex );
+            pthread_exit( NULL );
+        }
+
+        fclose( filePointer );
+        pthread_mutex_unlock( &mutex );
+
+        // Sleep for 10 seconds
+        struct timespec sleepTime = {10, 0}; // 10 seconds
+        nanosleep( &sleepTime, NULL );
+    }
 }
 
 // Main function
@@ -149,6 +268,9 @@ int main ( int argc, char *argv[] )
         closelog();
         exit( -1 );
     }
+
+    // Initialize the head of the list
+    SLIST_INIT( &threadHead );
 
     // Declare variables for address info
     struct addrinfo hints, *serviceAddr, *p;
@@ -249,11 +371,21 @@ int main ( int argc, char *argv[] )
         exit( -1 );
     }
 
-    // Accept and handle incoming client connections
+    // Create thread for appending timestamp
+    if ( pthread_create( &timestampThread, NULL, appendTimestamp, NULL ) != 0 )
+    {
+        // Log an error message if creating timestamp thread fails
+        syslog( LOG_ERR, "Failed to create timestamp thread" );
+        closelog(  );
+        exit( -1 );
+    }
+
     while ( 1 )
     {
+        // Accept and handle incoming client connections
         struct sockaddr_in clientAddr;
         socklen_t addrSize = sizeof( clientAddr );
+
         int clientSocket = accept( serverSocket, ( struct sockaddr * ) &clientAddr, &addrSize );
         if ( clientSocket == -1 )
         {
@@ -262,10 +394,40 @@ int main ( int argc, char *argv[] )
             continue;
         }
 
-        // Handle the client connection
-        handleClient( clientSocket, clientAddr );
-    }
+        // Create a new thread info structure
+        struct ThreadInfo *threadInfo = ( struct ThreadInfo * )malloc( sizeof( struct ThreadInfo ) );
+        if ( threadInfo == NULL )
+        {
+            syslog( LOG_ERR, "Failed to allocate memory" );
+            close( clientSocket );
+            continue;
+        }
 
-    return 0;
+        threadInfo->clientSocket = clientSocket;
+        threadInfo->threadComplete = false;
+        // Create thread to handle client
+        if ( pthread_create( &threadInfo->threadId, NULL, handleClient, threadInfo ) != 0 )
+        {
+            syslog( LOG_ERR, "Failed to create client handling thread" );
+            close( clientSocket );
+            free( threadInfo );
+            continue;
+        }
+
+        // Insert the thread info structure into the list
+        SLIST_INSERT_HEAD( &threadHead, threadInfo, entries );
+
+        // Join complete threads
+        struct ThreadInfo *currentThread, *nextThread;
+        SLIST_FOREACH_SAFE( currentThread, &threadHead, entries, nextThread )
+        {
+            if ( currentThread->threadComplete )
+            {
+                pthread_join( currentThread->threadId, NULL );
+                SLIST_REMOVE( &threadHead, currentThread, ThreadInfo, entries );
+                free( currentThread );
+            }
+        }
+    }
 }
 
