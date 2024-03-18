@@ -10,8 +10,8 @@ if grep -q '^staff:' /etc/group; then
 else
     group="wheel"
 fi
-
-insmod ./lib/modules/5.15.18/extra/aesdchar.ko
+cd /lib/modules/5.15.18/extra/
+# insmod ./lib/modules/5.15.18/extra/aesdchar.ko
 if [ -e ${module}.ko ]; then
     echo "Loading local built file ${module}.ko"
     insmod ./$module.ko $* || exit 1
