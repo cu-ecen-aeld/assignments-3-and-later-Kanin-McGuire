@@ -22,9 +22,18 @@
 #include <pthread.h>
 #include <time.h>
 #include "queue.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define USE_AESD_CHAR_DEVICE 1
 
 // Define the path to the data file
-#define DATA_FILE "/var/tmp/aesdsocketdata"
+#if USE_AESD_CHAR_DEVICE
+    #define DATA_FILE "/dev/aesdchar"
+#else
+    #define DATA_FILE "/var/tmp/aesdsocketdata"
+#endif
 
 // Declare global variables for the socket file descriptor and file pointer
 int serverSocket;
@@ -111,18 +120,28 @@ void *handleClient ( void *arg )
     while ( ( bytesReceived = recv( clientSocket, buffer, sizeof( buffer ), 0 ) ) > 0 )
     {
         pthread_mutex_lock( &mutex );
-
-        // Open the data file in append mode
-        filePointer = fopen( DATA_FILE, "a" );
-        if ( filePointer == NULL )
-        {
-            // Log an error message if the file cannot be opened
-            syslog( LOG_ERR, "Failed to open file %s: %s", DATA_FILE, strerror( errno ) );
-            pthread_mutex_unlock( &mutex );
-            close( clientSocket );
+        int fd = open(DATA_FILE, O_CREAT | O_RDWR | O_APPEND, 0744);
+        if (fd == -1) {
+            // Handle error
+            syslog(LOG_ERR, "Failed to open file %s: %s", DATA_FILE, strerror(errno));
+            pthread_mutex_unlock(&mutex);
+            close(clientSocket);
             threadInfo->threadComplete = true;
-            pthread_exit( NULL );
+            pthread_exit(NULL);
         }
+
+        // Convert file descriptor to file pointer
+        filePointer = fdopen(fd, "a");
+        if (filePointer == NULL) {
+            // Handle error
+            syslog(LOG_ERR, "Failed to convert file descriptor to file pointer");
+            close(fd);
+            pthread_mutex_unlock(&mutex);
+            close(clientSocket);
+            threadInfo->threadComplete = true;
+            pthread_exit(NULL);
+        }
+
         // Write the received data to the file
         fwrite( buffer, 1, bytesReceived, filePointer );
         fclose( filePointer );
@@ -242,6 +261,7 @@ int main ( int argc, char *argv[] )
     // Open the syslog with specified options
     openlog( "aesdsocket", LOG_PID | LOG_CONS, LOG_USER );
 
+#if (USE_AESD_CHAR_DEVICE == 0)
     // Remove the data file if it exists
     if ( remove( DATA_FILE ) == -1 && errno != ENOENT )
     {
@@ -250,7 +270,7 @@ int main ( int argc, char *argv[] )
         closelog();
         exit( -1 );
     }
-
+#endif
     // Variable to determine if the program runs in daemon mode
     bool isDaemonMode = false;
 
@@ -371,6 +391,7 @@ int main ( int argc, char *argv[] )
         exit( -1 );
     }
 
+#if (USE_AESD_CHAR_DEVICE == 0)
     // Create thread for appending timestamp
     if ( pthread_create( &timestampThread, NULL, appendTimestamp, NULL ) != 0 )
     {
@@ -379,6 +400,7 @@ int main ( int argc, char *argv[] )
         closelog(  );
         exit( -1 );
     }
+#endif
 
     while ( 1 )
     {
