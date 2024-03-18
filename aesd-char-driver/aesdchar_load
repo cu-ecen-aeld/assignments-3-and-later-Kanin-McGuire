@@ -20,11 +20,24 @@ else
     modprobe ${module} || exit 1
 fi
 echo "makenode"
-sudo sh -c 'major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
-rm -f /dev/aesdchar && \
-mknod /dev/aesdchar c $major 0 && \
-chgrp $group /dev/aesdchar && \
-chmod $mode /dev/aesdchar'
+# sudo sh -c 'major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
+# rm -f /dev/aesdchar && \
+# mknod /dev/aesdchar c $major 0 && \
+# chgrp $group /dev/aesdchar && \
+# chmod $mode /dev/aesdchar'
+
+major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices)
+rm -f /dev/aesdchar
+mknod /dev/aesdchar c $major 0
+chgrp $group /dev/aesdchar
+chmod $mode /dev/aesdchar
+
+# Check if the mknod command succeeded
+if [ $? -eq 0 ]; then
+    echo "Device node /dev/aesdchar created successfully."
+else
+    echo "Failed to create device node /dev/aesdchar."
+fi
 
 # major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
 # rm -f /dev/aesdchar && \
