@@ -21,10 +21,10 @@ else
 fi
 echo "makenode"
 major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
-sudo rm -f /dev/aesdchar && \
-sudo mknod /dev/aesdchar c $major 0 && \
-sudo chgrp $group /dev/aesdchar && \
-sudo chmod $mode /dev/aesdchar
+rm -f /dev/aesdchar && \
+mknod /dev/aesdchar c $major 0 && \
+chgrp $group /dev/aesdchar && \
+chmod $mode /dev/aesdchar
 
 # major=$(awk "\$2==\"$module\" {print \$1}" /proc/devices)
 # rm -f /dev/${device}
