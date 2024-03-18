@@ -261,7 +261,7 @@ int main ( int argc, char *argv[] )
     // Open the syslog with specified options
     openlog( "aesdsocket", LOG_PID | LOG_CONS, LOG_USER );
 
-// #if (USE_AESD_CHAR_DEVICE == 0)
+#if (USE_AESD_CHAR_DEVICE == 0)
     // Remove the data file if it exists
     if ( remove( DATA_FILE ) == -1 && errno != ENOENT )
     {
@@ -270,7 +270,7 @@ int main ( int argc, char *argv[] )
         closelog();
         exit( -1 );
     }
-// #endif
+#endif
     // Variable to determine if the program runs in daemon mode
     bool isDaemonMode = false;
 
