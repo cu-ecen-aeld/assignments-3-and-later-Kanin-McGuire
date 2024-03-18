@@ -20,11 +20,17 @@ else
     modprobe ${module} || exit 1
 fi
 echo "makenode"
-major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
+sudo sh -c 'major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
 rm -f /dev/aesdchar && \
 mknod /dev/aesdchar c $major 0 && \
 chgrp $group /dev/aesdchar && \
-chmod $mode /dev/aesdchar
+chmod $mode /dev/aesdchar'
+
+# major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices) && \
+# rm -f /dev/aesdchar && \
+# mknod /dev/aesdchar c $major 0 && \
+# chgrp $group /dev/aesdchar && \
+# chmod $mode /dev/aesdchar
 
 # major=$(awk "\$2==\"$module\" {print \$1}" /proc/devices)
 # rm -f /dev/${device}
